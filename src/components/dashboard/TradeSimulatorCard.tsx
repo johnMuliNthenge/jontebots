@@ -96,7 +96,7 @@ export default function TradeSimulatorCard() {
               Trade Simulator
             </CardTitle>
             <CardDescription>
-              Auto-closes trades when TP/SL is hit
+              Auto-closes trades when TP/SL is hit (every 7 seconds via cron)
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -202,7 +202,7 @@ export default function TradeSimulatorCard() {
           <div className="mt-4 p-3 rounded-lg bg-success/10 border border-success/30">
             <p className="text-sm text-success flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-              Simulator is running. Checking trades every 60 seconds.
+              Simulator is running. Checking trades every 7 seconds via background cron.
             </p>
           </div>
         )}
