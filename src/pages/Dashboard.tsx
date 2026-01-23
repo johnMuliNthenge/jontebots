@@ -5,11 +5,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, LogOut, Settings, BarChart3, Wallet, Activity, Shield } from 'lucide-react';
+import { Loader2, TrendingUp, LogOut, Settings, BarChart3, Wallet, Activity, Shield, Crown } from 'lucide-react';
 import MT5ConnectionCard from '@/components/dashboard/MT5ConnectionCard';
 import TradingConfigCard from '@/components/dashboard/TradingConfigCard';
 import TradesHistoryCard from '@/components/dashboard/TradesHistoryCard';
 import SubscriptionCard from '@/components/dashboard/SubscriptionCard';
+import { toast } from 'sonner';
 
 interface Subscription {
   status: 'active' | 'suspended' | 'expired';
@@ -39,6 +40,8 @@ export default function Dashboard() {
   const [mt5Connection, setMt5Connection] = useState<MT5Connection | null>(null);
   const [tradingConfig, setTradingConfig] = useState<TradingConfig | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
+  const [adminExists, setAdminExists] = useState<boolean | null>(null);
+  const [bootstrappingAdmin, setBootstrappingAdmin] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -49,8 +52,53 @@ export default function Dashboard() {
   useEffect(() => {
     if (user) {
       fetchUserData();
+      checkAdminExists();
     }
   }, [user]);
+
+  const checkAdminExists = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) return;
+
+      const response = await supabase.functions.invoke('assign-admin', {
+        body: { action: 'check_admin_exists' }
+      });
+
+      if (response.data) {
+        setAdminExists(response.data.admin_exists);
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+    }
+  };
+
+  const handleBootstrapAdmin = async () => {
+    setBootstrappingAdmin(true);
+    try {
+      const response = await supabase.functions.invoke('assign-admin', {
+        body: { action: 'bootstrap_first_admin' }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.success) {
+        toast.success('You are now the platform admin!');
+        setAdminExists(true);
+        // Refresh the page to update admin status
+        window.location.reload();
+      } else if (response.data?.error) {
+        toast.error(response.data.error);
+      }
+    } catch (error: any) {
+      console.error('Error bootstrapping admin:', error);
+      toast.error(error.message || 'Failed to assign admin role');
+    } finally {
+      setBootstrappingAdmin(false);
+    }
+  };
 
   const fetchUserData = async () => {
     if (!user) return;
@@ -130,6 +178,22 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Bootstrap Admin Button - only show if no admin exists and user is not admin */}
+              {adminExists === false && !isAdmin && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleBootstrapAdmin}
+                  disabled={bootstrappingAdmin}
+                  className="border-warning text-warning hover:bg-warning/10"
+                >
+                  {bootstrappingAdmin ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Crown className="h-4 w-4 mr-2" />
+                  )}
+                  Become Admin
+                </Button>
+              )}
               {isAdmin && (
                 <Button variant="outline" onClick={() => navigate('/admin')}>
                   <Shield className="h-4 w-4 mr-2" />

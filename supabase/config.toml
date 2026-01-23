@@ -1,1 +1,7 @@
 project_id = "itumqscfsxcjgjthbgsa"
+
+[functions.trading-bot]
+verify_jwt = false
+
+[functions.assign-admin]
+verify_jwt = false
