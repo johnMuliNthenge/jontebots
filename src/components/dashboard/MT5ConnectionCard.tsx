@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Server, Wifi, WifiOff, Loader2, AlertCircle } from 'lucide-react';
@@ -24,142 +24,119 @@ interface MT5ConnectionCardProps {
   onUpdate: () => void;
 }
 
-interface ServerOption {
-  label: string;
-  value: string;
-}
-
-interface BrokerGroup {
-  broker: string;
-  servers: ServerOption[];
-}
-
-const MT5_SERVER_GROUPS: BrokerGroup[] = [
-  {
-    broker: 'XM',
-    servers: [
-      { label: 'Demo', value: 'XMGlobal-MT5' },
-      { label: 'Demo 2', value: 'XMGlobal-MT5 2' },
-      { label: 'Live 1', value: 'XMGlobal-Real 1' },
-      { label: 'Live 2', value: 'XMGlobal-Real 2' },
-      { label: 'Live 3', value: 'XMGlobal-Real 3' },
-      { label: 'Live 4', value: 'XMGlobal-Real 4' },
-    ]
-  },
-  {
-    broker: 'Exness',
-    servers: [
-      { label: 'Demo', value: 'Exness-MT5Trial' },
-      { label: 'Demo 2', value: 'Exness-MT5Trial2' },
-      { label: 'Live', value: 'Exness-MT5Real' },
-      { label: 'Live 2', value: 'Exness-MT5Real2' },
-      { label: 'Live 3', value: 'Exness-MT5Real3' },
-      { label: 'Live 4', value: 'Exness-MT5Real4' },
-      { label: 'Live 5', value: 'Exness-MT5Real5' },
-      { label: 'Live 6', value: 'Exness-MT5Real6' },
-      { label: 'Live 7', value: 'Exness-MT5Real7' },
-    ]
-  },
-  {
-    broker: 'IC Markets',
-    servers: [
-      { label: 'Demo', value: 'ICMarketsSC-Demo' },
-      { label: 'Live 1', value: 'ICMarketsSC-MT5' },
-      { label: 'Live 2', value: 'ICMarketsSC-MT5-2' },
-      { label: 'Live 3', value: 'ICMarketsSC-MT5-3' },
-      { label: 'Live 4', value: 'ICMarketsSC-MT5-4' },
-    ]
-  },
-  {
-    broker: 'FBS',
-    servers: [
-      { label: 'Demo', value: 'FBS-Demo' },
-      { label: 'Live', value: 'FBS-Real' },
-      { label: 'Live 2', value: 'FBS-Real-2' },
-      { label: 'Live 3', value: 'FBS-Real-3' },
-    ]
-  },
-  {
-    broker: 'FXTM',
-    servers: [
-      { label: 'Demo', value: 'ForexTimeFXTM-Demo01' },
-      { label: 'Demo 2', value: 'ForexTimeFXTM-Demo02' },
-      { label: 'Live', value: 'ForexTimeFXTM-MT5' },
-      { label: 'Live 2', value: 'ForexTimeFXTM-MT5-2' },
-    ]
-  },
-  {
-    broker: 'Pepperstone',
-    servers: [
-      { label: 'Demo', value: 'Pepperstone-Demo' },
-      { label: 'Live', value: 'Pepperstone-MT5-Live01' },
-      { label: 'Live 2', value: 'Pepperstone-MT5-Live02' },
-    ]
-  },
-  {
-    broker: 'RoboForex',
-    servers: [
-      { label: 'Demo', value: 'RoboForex-DemoUS' },
-      { label: 'Live', value: 'RoboForex-MT5' },
-      { label: 'Live 2', value: 'RoboForex-Prime' },
-    ]
-  },
-  {
-    broker: 'Tickmill',
-    servers: [
-      { label: 'Demo', value: 'Tickmill-Demo' },
-      { label: 'Live', value: 'Tickmill-Live' },
-    ]
-  },
-  {
-    broker: 'Admirals',
-    servers: [
-      { label: 'Demo', value: 'AdmiralMarkets-Demo' },
-      { label: 'Live', value: 'AdmiralMarkets-MT5' },
-      { label: 'Live 2', value: 'AdmiralMarkets-MT5-2' },
-    ]
-  },
-  {
-    broker: 'OctaFX',
-    servers: [
-      { label: 'Demo', value: 'OctaFX-Demo' },
-      { label: 'Live', value: 'OctaFX-Real' },
-      { label: 'Live 2', value: 'OctaFX-Real2' },
-    ]
-  },
-  {
-    broker: 'HFM (HotForex)',
-    servers: [
-      { label: 'Demo', value: 'HFMarketsSV-Demo' },
-      { label: 'Live', value: 'HFMarketsSV-Live' },
-      { label: 'Live 2', value: 'HFMarketsSV-Live2' },
-    ]
-  },
-  {
-    broker: 'FxPro',
-    servers: [
-      { label: 'Demo', value: 'FxPro-MT5 Demo' },
-      { label: 'Live', value: 'FxPro-MT5' },
-    ]
-  },
-  {
-    broker: 'AvaTrade',
-    servers: [
-      { label: 'Demo', value: 'AvaTrade-Demo' },
-      { label: 'Live', value: 'AvaTrade-MT5' },
-    ]
-  },
-  {
-    broker: 'OANDA',
-    servers: [
-      { label: 'Demo', value: 'OANDA-Demo-1' },
-      { label: 'Live', value: 'OANDA-MT5-1' },
-    ]
-  },
+const MT5_SERVERS = [
+  // XM Servers
+  { label: 'XMGlobal-MT5 (Demo)', value: 'XMGlobal-MT5' },
+  { label: 'XMGlobal-MT5 2 (Demo)', value: 'XMGlobal-MT5 2' },
+  { label: 'XMGlobal-MT5 3 (Demo)', value: 'XMGlobal-MT5 3' },
+  { label: 'XMGlobal-MT5 4 (Demo)', value: 'XMGlobal-MT5 4' },
+  { label: 'XMGlobal-MT5 5 (Demo)', value: 'XMGlobal-MT5 5' },
+  { label: 'XMGlobal-MT5 6 (Demo)', value: 'XMGlobal-MT5 6' },
+  { label: 'XMGlobal-Real 1 (Live)', value: 'XMGlobal-Real 1' },
+  { label: 'XMGlobal-Real 2 (Live)', value: 'XMGlobal-Real 2' },
+  { label: 'XMGlobal-Real 3 (Live)', value: 'XMGlobal-Real 3' },
+  { label: 'XMGlobal-Real 4 (Live)', value: 'XMGlobal-Real 4' },
+  { label: 'XMGlobal-Real 5 (Live)', value: 'XMGlobal-Real 5' },
+  { label: 'XMGlobal-Real 6 (Live)', value: 'XMGlobal-Real 6' },
+  { label: 'XMGlobal-Real 7 (Live)', value: 'XMGlobal-Real 7' },
+  { label: 'XMGlobal-Real 8 (Live)', value: 'XMGlobal-Real 8' },
+  // Exness Servers
+  { label: 'Exness-MT5Trial (Demo)', value: 'Exness-MT5Trial' },
+  { label: 'Exness-MT5Trial2 (Demo)', value: 'Exness-MT5Trial2' },
+  { label: 'Exness-MT5Trial3 (Demo)', value: 'Exness-MT5Trial3' },
+  { label: 'Exness-MT5Trial4 (Demo)', value: 'Exness-MT5Trial4' },
+  { label: 'Exness-MT5Trial5 (Demo)', value: 'Exness-MT5Trial5' },
+  { label: 'Exness-MT5Trial6 (Demo)', value: 'Exness-MT5Trial6' },
+  { label: 'Exness-MT5Real (Live)', value: 'Exness-MT5Real' },
+  { label: 'Exness-MT5Real2 (Live)', value: 'Exness-MT5Real2' },
+  { label: 'Exness-MT5Real3 (Live)', value: 'Exness-MT5Real3' },
+  { label: 'Exness-MT5Real4 (Live)', value: 'Exness-MT5Real4' },
+  { label: 'Exness-MT5Real5 (Live)', value: 'Exness-MT5Real5' },
+  { label: 'Exness-MT5Real6 (Live)', value: 'Exness-MT5Real6' },
+  { label: 'Exness-MT5Real7 (Live)', value: 'Exness-MT5Real7' },
+  { label: 'Exness-MT5Real8 (Live)', value: 'Exness-MT5Real8' },
+  { label: 'Exness-MT5Real9 (Live)', value: 'Exness-MT5Real9' },
+  { label: 'Exness-MT5Real10 (Live)', value: 'Exness-MT5Real10' },
+  // IC Markets Servers
+  { label: 'ICMarketsSC-Demo (Demo)', value: 'ICMarketsSC-Demo' },
+  { label: 'ICMarketsSC-Demo02 (Demo)', value: 'ICMarketsSC-Demo02' },
+  { label: 'ICMarketsSC-Demo03 (Demo)', value: 'ICMarketsSC-Demo03' },
+  { label: 'ICMarketsSC-Demo04 (Demo)', value: 'ICMarketsSC-Demo04' },
+  { label: 'ICMarketsSC-MT5 (Live)', value: 'ICMarketsSC-MT5' },
+  { label: 'ICMarketsSC-MT5-2 (Live)', value: 'ICMarketsSC-MT5-2' },
+  { label: 'ICMarketsSC-MT5-3 (Live)', value: 'ICMarketsSC-MT5-3' },
+  { label: 'ICMarketsSC-MT5-4 (Live)', value: 'ICMarketsSC-MT5-4' },
+  { label: 'ICMarketsSC-MT5-5 (Live)', value: 'ICMarketsSC-MT5-5' },
+  { label: 'ICMarketsSC-MT5-6 (Live)', value: 'ICMarketsSC-MT5-6' },
+  // FBS Servers
+  { label: 'FBS-Demo (Demo)', value: 'FBS-Demo' },
+  { label: 'FBS-Demo-2 (Demo)', value: 'FBS-Demo-2' },
+  { label: 'FBS-Demo-3 (Demo)', value: 'FBS-Demo-3' },
+  { label: 'FBS-Real (Live)', value: 'FBS-Real' },
+  { label: 'FBS-Real-2 (Live)', value: 'FBS-Real-2' },
+  { label: 'FBS-Real-3 (Live)', value: 'FBS-Real-3' },
+  { label: 'FBS-Real-4 (Live)', value: 'FBS-Real-4' },
+  // FXTM Servers
+  { label: 'ForexTimeFXTM-Demo01 (Demo)', value: 'ForexTimeFXTM-Demo01' },
+  { label: 'ForexTimeFXTM-Demo02 (Demo)', value: 'ForexTimeFXTM-Demo02' },
+  { label: 'ForexTimeFXTM-Demo03 (Demo)', value: 'ForexTimeFXTM-Demo03' },
+  { label: 'ForexTimeFXTM-Demo04 (Demo)', value: 'ForexTimeFXTM-Demo04' },
+  { label: 'ForexTimeFXTM-MT5 (Live)', value: 'ForexTimeFXTM-MT5' },
+  { label: 'ForexTimeFXTM-MT5-2 (Live)', value: 'ForexTimeFXTM-MT5-2' },
+  { label: 'ForexTimeFXTM-MT5-3 (Live)', value: 'ForexTimeFXTM-MT5-3' },
+  // Pepperstone Servers
+  { label: 'Pepperstone-Demo (Demo)', value: 'Pepperstone-Demo' },
+  { label: 'Pepperstone-Demo02 (Demo)', value: 'Pepperstone-Demo02' },
+  { label: 'Pepperstone-Demo03 (Demo)', value: 'Pepperstone-Demo03' },
+  { label: 'Pepperstone-MT5-Live01 (Live)', value: 'Pepperstone-MT5-Live01' },
+  { label: 'Pepperstone-MT5-Live02 (Live)', value: 'Pepperstone-MT5-Live02' },
+  { label: 'Pepperstone-MT5-Live03 (Live)', value: 'Pepperstone-MT5-Live03' },
+  // RoboForex Servers
+  { label: 'RoboForex-DemoUS (Demo)', value: 'RoboForex-DemoUS' },
+  { label: 'RoboForex-Demo (Demo)', value: 'RoboForex-Demo' },
+  { label: 'RoboForex-Demo2 (Demo)', value: 'RoboForex-Demo2' },
+  { label: 'RoboForex-MT5 (Live)', value: 'RoboForex-MT5' },
+  { label: 'RoboForex-Prime (Live)', value: 'RoboForex-Prime' },
+  { label: 'RoboForex-Pro (Live)', value: 'RoboForex-Pro' },
+  // Tickmill Servers
+  { label: 'Tickmill-Demo (Demo)', value: 'Tickmill-Demo' },
+  { label: 'Tickmill-Demo-EU (Demo)', value: 'Tickmill-Demo-EU' },
+  { label: 'Tickmill-Live (Live)', value: 'Tickmill-Live' },
+  { label: 'Tickmill-Live-EU (Live)', value: 'Tickmill-Live-EU' },
+  // Admirals Servers
+  { label: 'AdmiralMarkets-Demo (Demo)', value: 'AdmiralMarkets-Demo' },
+  { label: 'AdmiralMarkets-Demo2 (Demo)', value: 'AdmiralMarkets-Demo2' },
+  { label: 'AdmiralMarkets-MT5 (Live)', value: 'AdmiralMarkets-MT5' },
+  { label: 'AdmiralMarkets-MT5-2 (Live)', value: 'AdmiralMarkets-MT5-2' },
+  // OctaFX Servers
+  { label: 'OctaFX-Demo (Demo)', value: 'OctaFX-Demo' },
+  { label: 'OctaFX-Demo2 (Demo)', value: 'OctaFX-Demo2' },
+  { label: 'OctaFX-Real (Live)', value: 'OctaFX-Real' },
+  { label: 'OctaFX-Real2 (Live)', value: 'OctaFX-Real2' },
+  { label: 'OctaFX-Real3 (Live)', value: 'OctaFX-Real3' },
+  // HFM Servers
+  { label: 'HFMarketsSV-Demo (Demo)', value: 'HFMarketsSV-Demo' },
+  { label: 'HFMarketsSV-Demo2 (Demo)', value: 'HFMarketsSV-Demo2' },
+  { label: 'HFMarketsSV-Demo3 (Demo)', value: 'HFMarketsSV-Demo3' },
+  { label: 'HFMarketsSV-Live (Live)', value: 'HFMarketsSV-Live' },
+  { label: 'HFMarketsSV-Live2 (Live)', value: 'HFMarketsSV-Live2' },
+  { label: 'HFMarketsSV-Live3 (Live)', value: 'HFMarketsSV-Live3' },
+  // FxPro Servers
+  { label: 'FxPro-MT5 Demo (Demo)', value: 'FxPro-MT5 Demo' },
+  { label: 'FxPro-MT5 Demo2 (Demo)', value: 'FxPro-MT5 Demo2' },
+  { label: 'FxPro-MT5 (Live)', value: 'FxPro-MT5' },
+  { label: 'FxPro-MT5-02 (Live)', value: 'FxPro-MT5-02' },
+  // AvaTrade Servers
+  { label: 'AvaTrade-Demo (Demo)', value: 'AvaTrade-Demo' },
+  { label: 'AvaTrade-Demo-EU (Demo)', value: 'AvaTrade-Demo-EU' },
+  { label: 'AvaTrade-MT5 (Live)', value: 'AvaTrade-MT5' },
+  { label: 'AvaTrade-MT5-EU (Live)', value: 'AvaTrade-MT5-EU' },
+  // OANDA Servers
+  { label: 'OANDA-Demo-1 (Demo)', value: 'OANDA-Demo-1' },
+  { label: 'OANDA-Demo-2 (Demo)', value: 'OANDA-Demo-2' },
+  { label: 'OANDA-MT5-1 (Live)', value: 'OANDA-MT5-1' },
+  { label: 'OANDA-MT5-2 (Live)', value: 'OANDA-MT5-2' },
 ];
-
-// Flatten for default value lookup
-const ALL_SERVERS = MT5_SERVER_GROUPS.flatMap(g => g.servers);
 
 export default function MT5ConnectionCard({ 
   connection, 
@@ -172,7 +149,7 @@ export default function MT5ConnectionCard({
 
   const [mt5Login, setMt5Login] = useState(connection?.mt5_login || '');
   const [mt5Password, setMt5Password] = useState('');
-  const [mt5Server, setMt5Server] = useState(connection?.mt5_server || ALL_SERVERS[0].value);
+  const [mt5Server, setMt5Server] = useState(connection?.mt5_server || MT5_SERVERS[0].value);
   const [tradingMode, setTradingMode] = useState<'demo' | 'live'>(connection?.trading_mode || 'demo');
 
   const handleSave = async () => {
@@ -286,15 +263,10 @@ export default function MT5ConnectionCard({
                   <SelectValue placeholder="Select server" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px] bg-background">
-                  {MT5_SERVER_GROUPS.map((group) => (
-                    <SelectGroup key={group.broker}>
-                      <SelectLabel className="font-semibold text-primary">{group.broker}</SelectLabel>
-                      {group.servers.map((server) => (
-                        <SelectItem key={server.value} value={server.value}>
-                          {server.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
+                  {MT5_SERVERS.map((server) => (
+                    <SelectItem key={server.value} value={server.value}>
+                      {server.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -341,7 +313,7 @@ export default function MT5ConnectionCard({
                     setIsEditing(false);
                     setMt5Login(connection.mt5_login);
                     setMt5Password('');
-                    setMt5Server(connection.mt5_server || ALL_SERVERS[0].value);
+                    setMt5Server(connection.mt5_server || MT5_SERVERS[0].value);
                     setTradingMode(connection.trading_mode);
                   }}
                 >
