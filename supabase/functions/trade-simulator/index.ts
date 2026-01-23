@@ -87,6 +87,116 @@ function shouldCloseTrade(
   return { shouldClose: false, reason: null }
 }
 
+// Helper function to delay execution
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// deno-lint-ignore no-explicit-any
+async function runSingleTick(supabase: any): Promise<{
+  processed: number
+  closed: number
+  closedTrades: { id: string; reason: string; profit_loss: number }[]
+  errors: string[]
+  current_prices: Record<string, number>
+}> {
+  // Get all open trades
+  const { data: openTrades, error: tradesError } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('status', 'open')
+
+  if (tradesError) {
+    console.error('Error fetching open trades:', tradesError)
+    throw tradesError
+  }
+
+  console.log(`Processing ${openTrades?.length || 0} open trades`)
+
+  const results = {
+    processed: 0,
+    closed: 0,
+    closedTrades: [] as { id: string; reason: string; profit_loss: number }[],
+    errors: [] as string[],
+    current_prices: {} as Record<string, number>
+  }
+
+  // Track simulated prices for this tick
+  const currentPrices: Record<string, number> = {}
+
+  for (const trade of openTrades || []) {
+    results.processed++
+
+    try {
+      // Validate user subscription is still active
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('status, expiry_date')
+        .eq('user_id', trade.user_id)
+        .maybeSingle()
+
+      const isActive = subscription?.status === 'active' && 
+        new Date(subscription.expiry_date) > new Date()
+
+      // If user subscription is not active, close the trade immediately
+      if (!isActive) {
+        console.log(`Closing trade ${trade.id} - user subscription inactive`)
+        
+        // Use last known price for closure
+        const exitPrice = currentPrices[trade.symbol] || 
+          simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+        
+        const profitLoss = calculateProfitLoss(trade as OpenTrade, exitPrice)
+
+        await closeTrade(supabase, trade.id, trade.user_id, exitPrice, profitLoss)
+        
+        results.closed++
+        results.closedTrades.push({ 
+          id: trade.id, 
+          reason: 'SUBSCRIPTION_INACTIVE', 
+          profit_loss: profitLoss 
+        })
+        continue
+      }
+
+      // Simulate current price
+      if (!currentPrices[trade.symbol]) {
+        currentPrices[trade.symbol] = simulatePrice(
+          trade.symbol, 
+          BASE_PRICES[trade.symbol] || trade.entry_price
+        )
+      }
+      const currentPrice = currentPrices[trade.symbol]
+
+      // Calculate current P/L
+      const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
+
+      // Check if TP or SL hit
+      const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
+
+      if (shouldClose && reason) {
+        console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD`)
+
+        await closeTrade(supabase, trade.id, trade.user_id, currentPrice, currentProfitLoss)
+
+        results.closed++
+        results.closedTrades.push({ 
+          id: trade.id, 
+          reason, 
+          profit_loss: currentProfitLoss 
+        })
+      }
+
+    } catch (err) {
+      console.error(`Error processing trade ${trade.id}:`, err)
+      results.errors.push(`Trade ${trade.id}: ${String(err)}`)
+    }
+  }
+
+  results.current_prices = currentPrices
+  return results
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -99,111 +209,86 @@ Deno.serve(async (req) => {
     )
 
     const body = await req.json().catch(() => ({}))
-    const { action, trade_id } = body
+    const { action, trade_id} = body
 
     console.log('Trade simulator request:', { action, trade_id })
 
-    // Run simulation tick - check all open trades
-    if (action === 'tick' || action === undefined) {
-      // Get all open trades
-      const { data: openTrades, error: tradesError } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('status', 'open')
-
-      if (tradesError) {
-        console.error('Error fetching open trades:', tradesError)
-        throw tradesError
+    // Continuous tick mode - runs every 7 seconds for ~1 minute (called by cron)
+    if (action === 'continuous_tick') {
+      const TICK_INTERVAL_MS = 7000 // 7 seconds
+      const TOTAL_DURATION_MS = 56000 // ~56 seconds (8 ticks, leaving buffer before next cron)
+      const startTime = Date.now()
+      
+      let tickCount = 0
+      const allResults = {
+        ticks: [] as Array<{
+          tick: number
+          timestamp: string
+          processed: number
+          closed: number
+          closedTrades: { id: string; reason: string; profit_loss: number }[]
+        }>,
+        totalProcessed: 0,
+        totalClosed: 0
       }
 
-      console.log(`Processing ${openTrades?.length || 0} open trades`)
+      console.log(`Starting continuous tick mode: ${TICK_INTERVAL_MS}ms intervals for ${TOTAL_DURATION_MS}ms`)
 
-      const results = {
-        processed: 0,
-        closed: 0,
-        closedTrades: [] as { id: string; reason: string; profit_loss: number }[],
-        errors: [] as string[]
-      }
-
-      // Track simulated prices for this tick
-      const currentPrices: Record<string, number> = {}
-
-      for (const trade of openTrades || []) {
-        results.processed++
-
+      while (Date.now() - startTime < TOTAL_DURATION_MS) {
+        tickCount++
+        console.log(`Tick ${tickCount} at ${new Date().toISOString()}`)
+        
         try {
-          // Validate user subscription is still active
-          const { data: subscription } = await supabase
-            .from('subscriptions')
-            .select('status, expiry_date')
-            .eq('user_id', trade.user_id)
-            .maybeSingle()
+          const tickResult = await runSingleTick(supabase)
+          
+          allResults.ticks.push({
+            tick: tickCount,
+            timestamp: new Date().toISOString(),
+            processed: tickResult.processed,
+            closed: tickResult.closed,
+            closedTrades: tickResult.closedTrades
+          })
+          
+          allResults.totalProcessed += tickResult.processed
+          allResults.totalClosed += tickResult.closed
 
-          const isActive = subscription?.status === 'active' && 
-            new Date(subscription.expiry_date) > new Date()
+          console.log(`Tick ${tickCount} complete: processed=${tickResult.processed}, closed=${tickResult.closed}`)
+        } catch (tickError) {
+          console.error(`Tick ${tickCount} error:`, tickError)
+        }
 
-          // If user subscription is not active, close the trade immediately
-          if (!isActive) {
-            console.log(`Closing trade ${trade.id} - user subscription inactive`)
-            
-            // Use last known price for closure
-            const exitPrice = currentPrices[trade.symbol] || 
-              simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
-            
-            const profitLoss = calculateProfitLoss(trade as OpenTrade, exitPrice)
-
-            await closeTrade(supabase, trade.id, trade.user_id, exitPrice, profitLoss)
-            
-            results.closed++
-            results.closedTrades.push({ 
-              id: trade.id, 
-              reason: 'SUBSCRIPTION_INACTIVE', 
-              profit_loss: profitLoss 
-            })
-            continue
-          }
-
-          // Simulate current price
-          if (!currentPrices[trade.symbol]) {
-            currentPrices[trade.symbol] = simulatePrice(
-              trade.symbol, 
-              BASE_PRICES[trade.symbol] || trade.entry_price
-            )
-          }
-          const currentPrice = currentPrices[trade.symbol]
-
-          // Calculate current P/L
-          const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
-
-          // Check if TP or SL hit
-          const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
-
-          if (shouldClose && reason) {
-            console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD`)
-
-            await closeTrade(supabase, trade.id, trade.user_id, currentPrice, currentProfitLoss)
-
-            results.closed++
-            results.closedTrades.push({ 
-              id: trade.id, 
-              reason, 
-              profit_loss: currentProfitLoss 
-            })
-          }
-
-        } catch (err) {
-          console.error(`Error processing trade ${trade.id}:`, err)
-          results.errors.push(`Trade ${trade.id}: ${String(err)}`)
+        // Wait for next tick interval (unless we've exceeded total duration)
+        if (Date.now() - startTime + TICK_INTERVAL_MS < TOTAL_DURATION_MS) {
+          await delay(TICK_INTERVAL_MS)
+        } else {
+          break
         }
       }
 
-      console.log('Simulation tick complete:', results)
+      console.log(`Continuous tick complete: ${tickCount} ticks, ${allResults.totalClosed} trades closed`)
 
       return new Response(
         JSON.stringify({
           success: true,
-          ...results,
-          current_prices: currentPrices
+          mode: 'continuous',
+          tick_interval_ms: TICK_INTERVAL_MS,
+          total_ticks: tickCount,
+          ...allResults
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Single tick mode - check all open trades once
+    if (action === 'tick' || action === undefined) {
+      const results = await runSingleTick(supabase)
+      console.log('Single tick complete:', results)
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode: 'single',
+          ...results
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
