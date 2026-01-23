@@ -1,0 +1,346 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Simulated base prices for instruments
+const BASE_PRICES: Record<string, number> = {
+  'USDJPY': 149.50,
+  'CADJPY': 109.80,
+  'GBPJPY': 188.90,
+  'EURJPY': 162.30,
+  'AUDJPY': 97.20,
+  'CHFJPY': 168.40,
+  'XAUUSD': 2045.50
+}
+
+// Pip values for calculating profit/loss
+const PIP_VALUES: Record<string, number> = {
+  'USDJPY': 0.01,
+  'CADJPY': 0.01,
+  'GBPJPY': 0.01,
+  'EURJPY': 0.01,
+  'AUDJPY': 0.01,
+  'CHFJPY': 0.01,
+  'XAUUSD': 0.01
+}
+
+interface OpenTrade {
+  id: string
+  user_id: string
+  symbol: string
+  trade_type: string
+  entry_price: number
+  lot_size: number
+  take_profit_usd: number
+  stop_loss_usd: number | null
+  opened_at: string
+}
+
+function simulatePrice(symbol: string, basePrice: number): number {
+  // Simulate price movement with random walk
+  const volatility = symbol === 'XAUUSD' ? 0.002 : 0.001 // Gold is more volatile
+  const randomChange = (Math.random() - 0.5) * 2 * volatility * basePrice
+  return Number((basePrice + randomChange).toFixed(5))
+}
+
+function calculateProfitLoss(
+  trade: OpenTrade,
+  currentPrice: number
+): number {
+  const pipValue = PIP_VALUES[trade.symbol] || 0.01
+  const priceDiff = trade.trade_type === 'BUY' 
+    ? currentPrice - trade.entry_price 
+    : trade.entry_price - currentPrice
+  
+  // Calculate profit in USD
+  // For JPY pairs: profit = (price_diff / 0.01) * lot_size * 100
+  // For XAUUSD: profit = price_diff * lot_size * 100
+  let profitLoss: number
+  
+  if (trade.symbol === 'XAUUSD') {
+    profitLoss = priceDiff * trade.lot_size * 100
+  } else {
+    // JPY pairs
+    profitLoss = (priceDiff / pipValue) * trade.lot_size * 0.1
+  }
+  
+  return Number(profitLoss.toFixed(2))
+}
+
+function shouldCloseTrade(
+  trade: OpenTrade,
+  currentProfitLoss: number
+): { shouldClose: boolean; reason: 'TP' | 'SL' | null } {
+  // Check Take Profit
+  if (currentProfitLoss >= trade.take_profit_usd) {
+    return { shouldClose: true, reason: 'TP' }
+  }
+  
+  // Check Stop Loss (if set)
+  if (trade.stop_loss_usd !== null && currentProfitLoss <= -trade.stop_loss_usd) {
+    return { shouldClose: true, reason: 'SL' }
+  }
+  
+  return { shouldClose: false, reason: null }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    )
+
+    const body = await req.json().catch(() => ({}))
+    const { action, trade_id } = body
+
+    console.log('Trade simulator request:', { action, trade_id })
+
+    // Run simulation tick - check all open trades
+    if (action === 'tick' || action === undefined) {
+      // Get all open trades
+      const { data: openTrades, error: tradesError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('status', 'open')
+
+      if (tradesError) {
+        console.error('Error fetching open trades:', tradesError)
+        throw tradesError
+      }
+
+      console.log(`Processing ${openTrades?.length || 0} open trades`)
+
+      const results = {
+        processed: 0,
+        closed: 0,
+        closedTrades: [] as { id: string; reason: string; profit_loss: number }[],
+        errors: [] as string[]
+      }
+
+      // Track simulated prices for this tick
+      const currentPrices: Record<string, number> = {}
+
+      for (const trade of openTrades || []) {
+        results.processed++
+
+        try {
+          // Validate user subscription is still active
+          const { data: subscription } = await supabase
+            .from('subscriptions')
+            .select('status, expiry_date')
+            .eq('user_id', trade.user_id)
+            .maybeSingle()
+
+          const isActive = subscription?.status === 'active' && 
+            new Date(subscription.expiry_date) > new Date()
+
+          // If user subscription is not active, close the trade immediately
+          if (!isActive) {
+            console.log(`Closing trade ${trade.id} - user subscription inactive`)
+            
+            // Use last known price for closure
+            const exitPrice = currentPrices[trade.symbol] || 
+              simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+            
+            const profitLoss = calculateProfitLoss(trade as OpenTrade, exitPrice)
+
+            await closeTrade(supabase, trade.id, trade.user_id, exitPrice, profitLoss)
+            
+            results.closed++
+            results.closedTrades.push({ 
+              id: trade.id, 
+              reason: 'SUBSCRIPTION_INACTIVE', 
+              profit_loss: profitLoss 
+            })
+            continue
+          }
+
+          // Simulate current price
+          if (!currentPrices[trade.symbol]) {
+            currentPrices[trade.symbol] = simulatePrice(
+              trade.symbol, 
+              BASE_PRICES[trade.symbol] || trade.entry_price
+            )
+          }
+          const currentPrice = currentPrices[trade.symbol]
+
+          // Calculate current P/L
+          const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
+
+          // Check if TP or SL hit
+          const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
+
+          if (shouldClose && reason) {
+            console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD`)
+
+            await closeTrade(supabase, trade.id, trade.user_id, currentPrice, currentProfitLoss)
+
+            results.closed++
+            results.closedTrades.push({ 
+              id: trade.id, 
+              reason, 
+              profit_loss: currentProfitLoss 
+            })
+          }
+
+        } catch (err) {
+          console.error(`Error processing trade ${trade.id}:`, err)
+          results.errors.push(`Trade ${trade.id}: ${String(err)}`)
+        }
+      }
+
+      console.log('Simulation tick complete:', results)
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          ...results,
+          current_prices: currentPrices
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Simulate a specific trade
+    if (action === 'simulate_single' && trade_id) {
+      const { data: trade, error: tradeError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('id', trade_id)
+        .maybeSingle()
+
+      if (tradeError || !trade) {
+        return new Response(
+          JSON.stringify({ error: 'Trade not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
+      const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
+
+      return new Response(
+        JSON.stringify({
+          trade_id: trade.id,
+          symbol: trade.symbol,
+          trade_type: trade.trade_type,
+          entry_price: trade.entry_price,
+          current_price: currentPrice,
+          current_profit_loss: currentProfitLoss,
+          take_profit_usd: trade.take_profit_usd,
+          stop_loss_usd: trade.stop_loss_usd,
+          would_close: shouldClose,
+          close_reason: reason
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Get current simulated prices
+    if (action === 'get_prices') {
+      const prices: Record<string, number> = {}
+      for (const [symbol, basePrice] of Object.entries(BASE_PRICES)) {
+        prices[symbol] = simulatePrice(symbol, basePrice)
+      }
+
+      return new Response(
+        JSON.stringify({ prices, timestamp: new Date().toISOString() }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Force close a trade at current simulated price
+    if (action === 'force_close' && trade_id) {
+      const { data: trade, error: tradeError } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('id', trade_id)
+        .eq('status', 'open')
+        .maybeSingle()
+
+      if (tradeError || !trade) {
+        return new Response(
+          JSON.stringify({ error: 'Open trade not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const profitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
+
+      await closeTrade(supabase, trade.id, trade.user_id, currentPrice, profitLoss)
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          trade_id: trade.id,
+          exit_price: currentPrice,
+          profit_loss: profitLoss
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    return new Response(
+      JSON.stringify({ error: 'Invalid action. Use: tick, simulate_single, get_prices, force_close' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+  } catch (error) {
+    console.error('Trade simulator error:', error)
+    return new Response(
+      JSON.stringify({ error: String(error) }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+})
+
+// deno-lint-ignore no-explicit-any
+async function closeTrade(
+  supabase: any,
+  tradeId: string,
+  userId: string,
+  exitPrice: number,
+  profitLoss: number
+) {
+  // Update trade record
+  const { error: updateError } = await supabase
+    .from('trades')
+    .update({
+      status: 'closed',
+      exit_price: exitPrice,
+      profit_loss: profitLoss,
+      closed_at: new Date().toISOString()
+    })
+    .eq('id', tradeId)
+
+  if (updateError) {
+    throw updateError
+  }
+
+  // Update account balance
+  const { data: mt5 } = await supabase
+    .from('mt5_connections')
+    .select('account_balance')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (mt5) {
+    const newBalance = ((mt5 as { account_balance: number | null }).account_balance || 0) + profitLoss
+    await supabase
+      .from('mt5_connections')
+      .update({ account_balance: newBalance })
+      .eq('user_id', userId)
+  }
+
+  console.log(`Trade ${tradeId} closed: exit=${exitPrice}, P/L=${profitLoss}`)
+}
