@@ -359,7 +359,7 @@ export default function MT5ConnectionCard({
 
     try {
       if (connection) {
-        // Update existing connection
+        // Update existing connection - mark as connected
         const { error } = await supabase
           .from('mt5_connections')
           .update({
@@ -367,12 +367,14 @@ export default function MT5ConnectionCard({
             mt5_password: mt5Password,
             mt5_server: mt5Server,
             trading_mode: tradingMode,
+            is_connected: true,
+            last_connected_at: new Date().toISOString(),
           })
           .eq('user_id', userId);
 
         if (error) throw error;
       } else {
-        // Create new connection
+        // Create new connection - mark as connected
         const { error } = await supabase
           .from('mt5_connections')
           .insert({
@@ -381,6 +383,8 @@ export default function MT5ConnectionCard({
             mt5_password: mt5Password,
             mt5_server: mt5Server,
             trading_mode: tradingMode,
+            is_connected: true,
+            last_connected_at: new Date().toISOString(),
           });
 
         if (error) throw error;
