@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { BarChart3, TrendingUp, TrendingDown, Clock } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Clock, Radio } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Trade {
@@ -24,9 +24,46 @@ interface TradesHistoryCardProps {
 export default function TradesHistoryCard({ userId }: TradesHistoryCardProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRealtime, setIsRealtime] = useState(false);
 
   useEffect(() => {
+    if (!userId) return;
+
     fetchTrades();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('trades-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'trades',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Realtime trade update:', payload);
+          
+          if (payload.eventType === 'INSERT') {
+            setTrades(prev => [payload.new as Trade, ...prev].slice(0, 10));
+          } else if (payload.eventType === 'UPDATE') {
+            setTrades(prev => prev.map(t => 
+              t.id === (payload.new as Trade).id ? payload.new as Trade : t
+            ));
+          } else if (payload.eventType === 'DELETE') {
+            setTrades(prev => prev.filter(t => t.id !== (payload.old as Trade).id));
+          }
+        }
+      )
+      .subscribe((status) => {
+        setIsRealtime(status === 'SUBSCRIBED');
+        console.log('Realtime subscription status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userId]);
 
   const fetchTrades = async () => {
@@ -59,6 +96,12 @@ export default function TradesHistoryCard({ userId }: TradesHistoryCardProps) {
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-primary" />
               Trade History
+              {isRealtime && (
+                <span className="flex items-center gap-1 text-xs font-normal text-success">
+                  <Radio className="h-3 w-3 animate-pulse" />
+                  LIVE
+                </span>
+              )}
             </CardTitle>
             <CardDescription>Your recent trading activity</CardDescription>
           </div>
