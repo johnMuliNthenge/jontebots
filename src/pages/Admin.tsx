@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Table,
   TableBody,
@@ -35,10 +36,14 @@ import {
   UserCheck,
   UserX,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  Radio,
+  Timer
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import MarketScannerCard from '@/components/dashboard/MarketScannerCard';
+import TradeSimulatorCard from '@/components/dashboard/TradeSimulatorCard';
 
 interface UserData {
   id: string;
@@ -281,6 +286,24 @@ export default function Admin() {
           </Card>
         </div>
 
+        {/* Admin Tabs */}
+        <Tabs defaultValue="users" className="space-y-6">
+          <TabsList className="bg-secondary/50">
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Users
+            </TabsTrigger>
+            <TabsTrigger value="scanner" className="flex items-center gap-2">
+              <Radio className="h-4 w-4" />
+              Market Scanner
+            </TabsTrigger>
+            <TabsTrigger value="simulator" className="flex items-center gap-2">
+              <Timer className="h-4 w-4" />
+              Trade Simulator
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users">
         {/* Users Table */}
         <Card className="card-trading border-glow">
           <CardHeader>
@@ -454,6 +477,16 @@ export default function Admin() {
             </div>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="scanner">
+            <MarketScannerCard />
+          </TabsContent>
+
+          <TabsContent value="simulator">
+            <TradeSimulatorCard />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
