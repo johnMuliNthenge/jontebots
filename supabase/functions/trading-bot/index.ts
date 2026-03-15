@@ -24,8 +24,8 @@ const VOLATILITY_PROFILE: Record<string, number> = {
   'XAUUSD': 2.0   // Gold is highly volatile
 }
 
-// Simulated base prices
-const BASE_PRICES: Record<string, number> = {
+// Fallback base prices (used only if live API fails)
+const FALLBACK_PRICES: Record<string, number> = {
   'USDJPY': 149.50,
   'CADJPY': 109.80,
   'GBPJPY': 188.90,
@@ -34,6 +34,71 @@ const BASE_PRICES: Record<string, number> = {
   'CHFJPY': 168.40,
   'XAUUSD': 2045.50
 }
+
+// Map our symbol names to Twelve Data format
+const TWELVE_DATA_MAP: Record<string, string> = {
+  'USDJPY': 'USD/JPY',
+  'CADJPY': 'CAD/JPY',
+  'GBPJPY': 'GBP/JPY',
+  'EURJPY': 'EUR/JPY',
+  'AUDJPY': 'AUD/JPY',
+  'CHFJPY': 'CHF/JPY',
+  'XAUUSD': 'XAU/USD'
+}
+
+let _livePriceCache: Record<string, number> = {}
+let _lastFetchTime = 0
+
+async function fetchLiveMarketPrices(symbols: string[]): Promise<Record<string, number>> {
+  const now = Date.now()
+  if (now - _lastFetchTime < 5000 && Object.keys(_livePriceCache).length > 0) {
+    return _livePriceCache
+  }
+
+  const apiKey = Deno.env.get('TWELVE_DATA_API_KEY')
+  if (!apiKey) {
+    console.warn('TWELVE_DATA_API_KEY not set - using fallback prices')
+    return {}
+  }
+
+  try {
+    const tdSymbols = symbols.map(s => TWELVE_DATA_MAP[s]).filter(Boolean)
+    if (tdSymbols.length === 0) return {}
+
+    const url = `https://api.twelvedata.com/price?symbol=${encodeURIComponent(tdSymbols.join(','))}&apikey=${apiKey}`
+    const response = await fetch(url)
+    if (!response.ok) return {}
+
+    const data = await response.json()
+    const prices: Record<string, number> = {}
+
+    if (tdSymbols.length === 1) {
+      if (data.price) {
+        const ourSymbol = symbols.find(s => TWELVE_DATA_MAP[s] === tdSymbols[0])
+        if (ourSymbol) prices[ourSymbol] = parseFloat(data.price)
+      }
+    } else {
+      for (const [tdSymbol, value] of Object.entries(data)) {
+        const ourSymbol = Object.entries(TWELVE_DATA_MAP).find(([_, v]) => v === tdSymbol)?.[0]
+        if (ourSymbol && (value as any)?.price) {
+          prices[ourSymbol] = parseFloat((value as any).price)
+        }
+      }
+    }
+
+    if (Object.keys(prices).length > 0) {
+      _livePriceCache = prices
+      _lastFetchTime = now
+    }
+    return prices
+  } catch (err) {
+    console.error('Live price fetch failed:', err)
+    return {}
+  }
+}
+
+// Get BASE_PRICES dynamically (live or fallback)
+let BASE_PRICES: Record<string, number> = { ...FALLBACK_PRICES }
 
 // ============================================================
 // TECHNICAL INDICATORS
