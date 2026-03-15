@@ -188,6 +188,7 @@ async function runSingleTick(supabase: any): Promise<{
   closedTrades: { id: string; reason: string; profit_loss: number }[]
   errors: string[]
   current_prices: Record<string, number>
+  price_source: string
 }> {
   // Get all open trades
   const { data: openTrades, error: tradesError } = await supabase
@@ -202,16 +203,29 @@ async function runSingleTick(supabase: any): Promise<{
 
   console.log(`Processing ${openTrades?.length || 0} open trades`)
 
+  // Collect unique symbols from open trades
+  const uniqueSymbols = [...new Set((openTrades || []).map((t: any) => t.symbol as string))]
+  
+  // Fetch live prices for all symbols at once
+  const livePrices = await fetchLivePrices(uniqueSymbols.length > 0 ? uniqueSymbols : Object.keys(SYMBOL_MAP))
+  const priceSource = Object.keys(livePrices).length > 0 ? 'live (Twelve Data)' : 'fallback'
+  
+  console.log(`Price source: ${priceSource}`)
+
   const results = {
     processed: 0,
     closed: 0,
     closedTrades: [] as { id: string; reason: string; profit_loss: number }[],
     errors: [] as string[],
-    current_prices: {} as Record<string, number>
+    current_prices: {} as Record<string, number>,
+    price_source: priceSource
   }
 
-  // Track simulated prices for this tick
+  // Get current prices for all traded symbols
   const currentPrices: Record<string, number> = {}
+  for (const symbol of uniqueSymbols) {
+    currentPrices[symbol] = getPrice(symbol, livePrices)
+  }
 
   for (const trade of openTrades || []) {
     results.processed++
@@ -231,10 +245,7 @@ async function runSingleTick(supabase: any): Promise<{
       if (!isActive) {
         console.log(`Closing trade ${trade.id} - user subscription inactive`)
         
-        // Use last known price for closure
-        const exitPrice = currentPrices[trade.symbol] || 
-          simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
-        
+        const exitPrice = currentPrices[trade.symbol] || getPrice(trade.symbol, livePrices)
         const profitLoss = calculateProfitLoss(trade as OpenTrade, exitPrice)
 
         await closeTrade(supabase, trade.id, trade.user_id, exitPrice, profitLoss)
@@ -248,12 +259,9 @@ async function runSingleTick(supabase: any): Promise<{
         continue
       }
 
-      // Simulate current price
+      // Use live price
       if (!currentPrices[trade.symbol]) {
-        currentPrices[trade.symbol] = simulatePrice(
-          trade.symbol, 
-          BASE_PRICES[trade.symbol] || trade.entry_price
-        )
+        currentPrices[trade.symbol] = getPrice(trade.symbol, livePrices)
       }
       const currentPrice = currentPrices[trade.symbol]
 
@@ -264,7 +272,7 @@ async function runSingleTick(supabase: any): Promise<{
       const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
 
       if (shouldClose && reason) {
-        console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD`)
+        console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD (live price: ${currentPrice})`)
 
         await closeTrade(supabase, trade.id, trade.user_id, currentPrice, currentProfitLoss)
 
