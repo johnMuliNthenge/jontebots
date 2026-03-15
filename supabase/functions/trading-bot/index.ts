@@ -576,7 +576,15 @@ Deno.serve(async (req) => {
 
     console.log('Trading bot request:', { action, symbol, user_id })
 
-    // Generate trading signal using strategies
+    // Fetch live prices and update BASE_PRICES before any analysis
+    const livePrices = await fetchLiveMarketPrices(ALLOWED_INSTRUMENTS)
+    if (Object.keys(livePrices).length > 0) {
+      BASE_PRICES = { ...FALLBACK_PRICES, ...livePrices }
+      console.log('Using live market prices:', livePrices)
+    } else {
+      console.log('Using fallback prices')
+    }
+
     if (action === 'analyze_market') {
       const targetSymbol = symbol || ALLOWED_INSTRUMENTS[Math.floor(Math.random() * ALLOWED_INSTRUMENTS.length)]
       
