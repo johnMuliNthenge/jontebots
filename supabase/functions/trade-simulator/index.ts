@@ -5,8 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Simulated base prices for instruments
-const BASE_PRICES: Record<string, number> = {
+// Fallback prices (used only if live API fails)
+const FALLBACK_PRICES: Record<string, number> = {
   'USDJPY': 149.50,
   'CADJPY': 109.80,
   'GBPJPY': 188.90,
@@ -14,6 +14,17 @@ const BASE_PRICES: Record<string, number> = {
   'AUDJPY': 97.20,
   'CHFJPY': 168.40,
   'XAUUSD': 2045.50
+}
+
+// Map our symbol names to Twelve Data format
+const SYMBOL_MAP: Record<string, string> = {
+  'USDJPY': 'USD/JPY',
+  'CADJPY': 'CAD/JPY',
+  'GBPJPY': 'GBP/JPY',
+  'EURJPY': 'EUR/JPY',
+  'AUDJPY': 'AUD/JPY',
+  'CHFJPY': 'CHF/JPY',
+  'XAUUSD': 'XAU/USD'
 }
 
 // Pip values for calculating profit/loss
@@ -25,6 +36,84 @@ const PIP_VALUES: Record<string, number> = {
   'AUDJPY': 0.01,
   'CHFJPY': 0.01,
   'XAUUSD': 0.01
+}
+
+// Cache for live prices (refreshed each tick)
+let livePriceCache: Record<string, number> = {}
+let lastPriceFetchTime = 0
+const PRICE_CACHE_TTL_MS = 5000 // 5 seconds
+
+async function fetchLivePrices(symbols: string[]): Promise<Record<string, number>> {
+  const now = Date.now()
+  
+  // Return cache if still fresh
+  if (now - lastPriceFetchTime < PRICE_CACHE_TTL_MS && Object.keys(livePriceCache).length > 0) {
+    console.log('Using cached live prices')
+    return livePriceCache
+  }
+
+  const apiKey = Deno.env.get('TWELVE_DATA_API_KEY')
+  if (!apiKey) {
+    console.warn('TWELVE_DATA_API_KEY not set - using fallback prices')
+    return {}
+  }
+
+  try {
+    // Map symbols to Twelve Data format
+    const tdSymbols = symbols
+      .map(s => SYMBOL_MAP[s])
+      .filter(Boolean)
+    
+    if (tdSymbols.length === 0) return {}
+
+    const symbolParam = tdSymbols.join(',')
+    const url = `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbolParam)}&apikey=${apiKey}`
+    
+    console.log(`Fetching live prices for: ${symbolParam}`)
+    
+    const response = await fetch(url)
+    if (!response.ok) {
+      console.error(`Twelve Data API error: ${response.status}`)
+      return {}
+    }
+
+    const data = await response.json()
+    const prices: Record<string, number> = {}
+
+    // If single symbol, response is { price: "..." }
+    // If multiple symbols, response is { "USD/JPY": { price: "..." }, ... }
+    if (tdSymbols.length === 1) {
+      if (data.price) {
+        const ourSymbol = symbols.find(s => SYMBOL_MAP[s] === tdSymbols[0])
+        if (ourSymbol) {
+          prices[ourSymbol] = parseFloat(data.price)
+        }
+      }
+    } else {
+      for (const [tdSymbol, value] of Object.entries(data)) {
+        const ourSymbol = Object.entries(SYMBOL_MAP).find(([_, v]) => v === tdSymbol)?.[0]
+        if (ourSymbol && (value as any)?.price) {
+          prices[ourSymbol] = parseFloat((value as any).price)
+        }
+      }
+    }
+
+    if (Object.keys(prices).length > 0) {
+      livePriceCache = prices
+      lastPriceFetchTime = now
+      console.log(`Live prices fetched:`, prices)
+    }
+
+    return prices
+  } catch (err) {
+    console.error('Failed to fetch live prices:', err)
+    return {}
+  }
+}
+
+function getPrice(symbol: string, livePrices: Record<string, number>): number {
+  if (livePrices[symbol]) return livePrices[symbol]
+  return FALLBACK_PRICES[symbol] || 0
 }
 
 interface OpenTrade {
