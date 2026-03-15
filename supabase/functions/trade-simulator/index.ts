@@ -5,8 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Simulated base prices for instruments
-const BASE_PRICES: Record<string, number> = {
+// Fallback prices (used only if live API fails)
+const FALLBACK_PRICES: Record<string, number> = {
   'USDJPY': 149.50,
   'CADJPY': 109.80,
   'GBPJPY': 188.90,
@@ -14,6 +14,17 @@ const BASE_PRICES: Record<string, number> = {
   'AUDJPY': 97.20,
   'CHFJPY': 168.40,
   'XAUUSD': 2045.50
+}
+
+// Map our symbol names to Twelve Data format
+const SYMBOL_MAP: Record<string, string> = {
+  'USDJPY': 'USD/JPY',
+  'CADJPY': 'CAD/JPY',
+  'GBPJPY': 'GBP/JPY',
+  'EURJPY': 'EUR/JPY',
+  'AUDJPY': 'AUD/JPY',
+  'CHFJPY': 'CHF/JPY',
+  'XAUUSD': 'XAU/USD'
 }
 
 // Pip values for calculating profit/loss
@@ -25,6 +36,84 @@ const PIP_VALUES: Record<string, number> = {
   'AUDJPY': 0.01,
   'CHFJPY': 0.01,
   'XAUUSD': 0.01
+}
+
+// Cache for live prices (refreshed each tick)
+let livePriceCache: Record<string, number> = {}
+let lastPriceFetchTime = 0
+const PRICE_CACHE_TTL_MS = 5000 // 5 seconds
+
+async function fetchLivePrices(symbols: string[]): Promise<Record<string, number>> {
+  const now = Date.now()
+  
+  // Return cache if still fresh
+  if (now - lastPriceFetchTime < PRICE_CACHE_TTL_MS && Object.keys(livePriceCache).length > 0) {
+    console.log('Using cached live prices')
+    return livePriceCache
+  }
+
+  const apiKey = Deno.env.get('TWELVE_DATA_API_KEY')
+  if (!apiKey) {
+    console.warn('TWELVE_DATA_API_KEY not set - using fallback prices')
+    return {}
+  }
+
+  try {
+    // Map symbols to Twelve Data format
+    const tdSymbols = symbols
+      .map(s => SYMBOL_MAP[s])
+      .filter(Boolean)
+    
+    if (tdSymbols.length === 0) return {}
+
+    const symbolParam = tdSymbols.join(',')
+    const url = `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbolParam)}&apikey=${apiKey}`
+    
+    console.log(`Fetching live prices for: ${symbolParam}`)
+    
+    const response = await fetch(url)
+    if (!response.ok) {
+      console.error(`Twelve Data API error: ${response.status}`)
+      return {}
+    }
+
+    const data = await response.json()
+    const prices: Record<string, number> = {}
+
+    // If single symbol, response is { price: "..." }
+    // If multiple symbols, response is { "USD/JPY": { price: "..." }, ... }
+    if (tdSymbols.length === 1) {
+      if (data.price) {
+        const ourSymbol = symbols.find(s => SYMBOL_MAP[s] === tdSymbols[0])
+        if (ourSymbol) {
+          prices[ourSymbol] = parseFloat(data.price)
+        }
+      }
+    } else {
+      for (const [tdSymbol, value] of Object.entries(data)) {
+        const ourSymbol = Object.entries(SYMBOL_MAP).find(([_, v]) => v === tdSymbol)?.[0]
+        if (ourSymbol && (value as any)?.price) {
+          prices[ourSymbol] = parseFloat((value as any).price)
+        }
+      }
+    }
+
+    if (Object.keys(prices).length > 0) {
+      livePriceCache = prices
+      lastPriceFetchTime = now
+      console.log(`Live prices fetched:`, prices)
+    }
+
+    return prices
+  } catch (err) {
+    console.error('Failed to fetch live prices:', err)
+    return {}
+  }
+}
+
+function getPrice(symbol: string, livePrices: Record<string, number>): number {
+  if (livePrices[symbol]) return livePrices[symbol]
+  return FALLBACK_PRICES[symbol] || 0
 }
 
 interface OpenTrade {
@@ -99,6 +188,7 @@ async function runSingleTick(supabase: any): Promise<{
   closedTrades: { id: string; reason: string; profit_loss: number }[]
   errors: string[]
   current_prices: Record<string, number>
+  price_source: string
 }> {
   // Get all open trades
   const { data: openTrades, error: tradesError } = await supabase
@@ -113,16 +203,29 @@ async function runSingleTick(supabase: any): Promise<{
 
   console.log(`Processing ${openTrades?.length || 0} open trades`)
 
+  // Collect unique symbols from open trades
+  const uniqueSymbols = [...new Set((openTrades || []).map((t: any) => t.symbol as string))]
+  
+  // Fetch live prices for all symbols at once
+  const livePrices = await fetchLivePrices(uniqueSymbols.length > 0 ? uniqueSymbols : Object.keys(SYMBOL_MAP))
+  const priceSource = Object.keys(livePrices).length > 0 ? 'live (Twelve Data)' : 'fallback'
+  
+  console.log(`Price source: ${priceSource}`)
+
   const results = {
     processed: 0,
     closed: 0,
     closedTrades: [] as { id: string; reason: string; profit_loss: number }[],
     errors: [] as string[],
-    current_prices: {} as Record<string, number>
+    current_prices: {} as Record<string, number>,
+    price_source: priceSource
   }
 
-  // Track simulated prices for this tick
+  // Get current prices for all traded symbols
   const currentPrices: Record<string, number> = {}
+  for (const symbol of uniqueSymbols) {
+    currentPrices[symbol] = getPrice(symbol, livePrices)
+  }
 
   for (const trade of openTrades || []) {
     results.processed++
@@ -142,10 +245,7 @@ async function runSingleTick(supabase: any): Promise<{
       if (!isActive) {
         console.log(`Closing trade ${trade.id} - user subscription inactive`)
         
-        // Use last known price for closure
-        const exitPrice = currentPrices[trade.symbol] || 
-          simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
-        
+        const exitPrice = currentPrices[trade.symbol] || getPrice(trade.symbol, livePrices)
         const profitLoss = calculateProfitLoss(trade as OpenTrade, exitPrice)
 
         await closeTrade(supabase, trade.id, trade.user_id, exitPrice, profitLoss)
@@ -159,12 +259,9 @@ async function runSingleTick(supabase: any): Promise<{
         continue
       }
 
-      // Simulate current price
+      // Use live price
       if (!currentPrices[trade.symbol]) {
-        currentPrices[trade.symbol] = simulatePrice(
-          trade.symbol, 
-          BASE_PRICES[trade.symbol] || trade.entry_price
-        )
+        currentPrices[trade.symbol] = getPrice(trade.symbol, livePrices)
       }
       const currentPrice = currentPrices[trade.symbol]
 
@@ -175,7 +272,7 @@ async function runSingleTick(supabase: any): Promise<{
       const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
 
       if (shouldClose && reason) {
-        console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD`)
+        console.log(`Closing trade ${trade.id} - ${reason} hit at ${currentProfitLoss} USD (live price: ${currentPrice})`)
 
         await closeTrade(supabase, trade.id, trade.user_id, currentPrice, currentProfitLoss)
 
@@ -309,7 +406,8 @@ Deno.serve(async (req) => {
         )
       }
 
-      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const livePrices = await fetchLivePrices([trade.symbol])
+      const currentPrice = getPrice(trade.symbol, livePrices)
       const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
       const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
 
@@ -324,26 +422,33 @@ Deno.serve(async (req) => {
           take_profit_usd: trade.take_profit_usd,
           stop_loss_usd: trade.stop_loss_usd,
           would_close: shouldClose,
-          close_reason: reason
+          close_reason: reason,
+          price_source: Object.keys(livePrices).length > 0 ? 'live' : 'fallback'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Get current simulated prices
+    // Get current LIVE prices
     if (action === 'get_prices') {
+      const allSymbols = Object.keys(SYMBOL_MAP)
+      const livePrices = await fetchLivePrices(allSymbols)
       const prices: Record<string, number> = {}
-      for (const [symbol, basePrice] of Object.entries(BASE_PRICES)) {
-        prices[symbol] = simulatePrice(symbol, basePrice)
+      for (const symbol of allSymbols) {
+        prices[symbol] = getPrice(symbol, livePrices)
       }
 
       return new Response(
-        JSON.stringify({ prices, timestamp: new Date().toISOString() }),
+        JSON.stringify({ 
+          prices, 
+          timestamp: new Date().toISOString(),
+          source: Object.keys(livePrices).length > 0 ? 'live (Twelve Data)' : 'fallback'
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Force close a trade at current simulated price
+    // Force close a trade at current live price
     if (action === 'force_close' && trade_id) {
       const { data: trade, error: tradeError } = await supabase
         .from('trades')
@@ -359,7 +464,8 @@ Deno.serve(async (req) => {
         )
       }
 
-      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const livePrices = await fetchLivePrices([trade.symbol])
+      const currentPrice = getPrice(trade.symbol, livePrices)
       const profitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
 
       await closeTrade(supabase, trade.id, trade.user_id, currentPrice, profitLoss)
@@ -369,7 +475,8 @@ Deno.serve(async (req) => {
           success: true,
           trade_id: trade.id,
           exit_price: currentPrice,
-          profit_loss: profitLoss
+          profit_loss: profitLoss,
+          price_source: Object.keys(livePrices).length > 0 ? 'live' : 'fallback'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
