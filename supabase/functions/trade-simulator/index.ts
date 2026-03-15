@@ -78,6 +78,7 @@ async function fetchLivePrices(symbols: string[]): Promise<Record<string, number
     }
 
     const data = await response.json()
+    console.log('Twelve Data API response:', JSON.stringify(data))
     const prices: Record<string, number> = {}
 
     // If single symbol, response is { price: "..." }
