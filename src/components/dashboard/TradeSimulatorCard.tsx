@@ -187,12 +187,17 @@ export default function TradeSimulatorCard() {
 
         {lastResult?.current_prices && Object.keys(lastResult.current_prices).length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/50">
-            <p className="text-xs text-muted-foreground mb-2">Simulated Prices:</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-muted-foreground">Market Prices:</p>
+              <Badge variant={lastResult.price_source?.includes('live') ? 'default' : 'secondary'} className={`text-xs ${lastResult.price_source?.includes('live') ? 'bg-success' : ''}`}>
+                {lastResult.price_source?.includes('live') ? '🟢 LIVE' : '⚠️ Fallback'}
+              </Badge>
+            </div>
             <div className="grid grid-cols-4 gap-2 text-xs">
               {Object.entries(lastResult.current_prices).map(([symbol, price]) => (
                 <div key={symbol} className="font-mono">
                   <span className="text-muted-foreground">{symbol}:</span>{' '}
-                  <span>{(price as number).toFixed(2)}</span>
+                  <span>{(price as number).toFixed(symbol === 'XAUUSD' ? 2 : 3)}</span>
                 </div>
               ))}
             </div>
