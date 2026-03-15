@@ -406,7 +406,8 @@ Deno.serve(async (req) => {
         )
       }
 
-      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const livePrices = await fetchLivePrices([trade.symbol])
+      const currentPrice = getPrice(trade.symbol, livePrices)
       const currentProfitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
       const { shouldClose, reason } = shouldCloseTrade(trade as OpenTrade, currentProfitLoss)
 
@@ -421,26 +422,33 @@ Deno.serve(async (req) => {
           take_profit_usd: trade.take_profit_usd,
           stop_loss_usd: trade.stop_loss_usd,
           would_close: shouldClose,
-          close_reason: reason
+          close_reason: reason,
+          price_source: Object.keys(livePrices).length > 0 ? 'live' : 'fallback'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Get current simulated prices
+    // Get current LIVE prices
     if (action === 'get_prices') {
+      const allSymbols = Object.keys(SYMBOL_MAP)
+      const livePrices = await fetchLivePrices(allSymbols)
       const prices: Record<string, number> = {}
-      for (const [symbol, basePrice] of Object.entries(BASE_PRICES)) {
-        prices[symbol] = simulatePrice(symbol, basePrice)
+      for (const symbol of allSymbols) {
+        prices[symbol] = getPrice(symbol, livePrices)
       }
 
       return new Response(
-        JSON.stringify({ prices, timestamp: new Date().toISOString() }),
+        JSON.stringify({ 
+          prices, 
+          timestamp: new Date().toISOString(),
+          source: Object.keys(livePrices).length > 0 ? 'live (Twelve Data)' : 'fallback'
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Force close a trade at current simulated price
+    // Force close a trade at current live price
     if (action === 'force_close' && trade_id) {
       const { data: trade, error: tradeError } = await supabase
         .from('trades')
@@ -456,7 +464,8 @@ Deno.serve(async (req) => {
         )
       }
 
-      const currentPrice = simulatePrice(trade.symbol, BASE_PRICES[trade.symbol] || trade.entry_price)
+      const livePrices = await fetchLivePrices([trade.symbol])
+      const currentPrice = getPrice(trade.symbol, livePrices)
       const profitLoss = calculateProfitLoss(trade as OpenTrade, currentPrice)
 
       await closeTrade(supabase, trade.id, trade.user_id, currentPrice, profitLoss)
@@ -466,7 +475,8 @@ Deno.serve(async (req) => {
           success: true,
           trade_id: trade.id,
           exit_price: currentPrice,
-          profit_loss: profitLoss
+          profit_loss: profitLoss,
+          price_source: Object.keys(livePrices).length > 0 ? 'live' : 'fallback'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
