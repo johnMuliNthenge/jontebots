@@ -21,6 +21,7 @@ interface SimulatorResult {
   closed: number;
   closedTrades: { id: string; reason: string; profit_loss: number }[];
   current_prices: Record<string, number>;
+  price_source?: string;
   errors?: string[];
 }
 
