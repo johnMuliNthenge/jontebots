@@ -1,26 +1,191 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>Lovable App</title>
-    <meta name="description" content="Lovable Generated Project" />
-    <meta name="author" content="Lovable" />
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- TODO: Update og:title to match your application name -->
-    <meta property="og:title" content="Lovable App" />
-    <meta property="og:description" content="Lovable Generated Project" />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+<title>JonteBots | Web3 Automation Engine</title>
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@Lovable" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-  </head>
+<style>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+body{
+margin:0;
+font-family:Inter,Arial;
+background:#020617;
+color:#e2e8f0;
+}
+
+header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:20px 10%;
+background:#020617;
+border-bottom:1px solid #1e293b;
+}
+
+.logo{
+font-size:22px;
+font-weight:700;
+color:#22c55e;
+}
+
+nav a{
+margin-left:25px;
+text-decoration:none;
+color:#94a3b8;
+font-size:15px;
+}
+
+.hero{
+padding:120px 10%;
+text-align:center;
+}
+
+.hero h1{
+font-size:60px;
+color:white;
+}
+
+.hero span{
+color:#22c55e;
+}
+
+.hero p{
+margin-top:20px;
+font-size:20px;
+color:#94a3b8;
+max-width:700px;
+margin-left:auto;
+margin-right:auto;
+}
+
+.cta{
+margin-top:40px;
+}
+
+button{
+background:#22c55e;
+border:none;
+padding:16px 35px;
+font-size:18px;
+border-radius:10px;
+cursor:pointer;
+}
+
+.features{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+gap:40px;
+padding:100px 10%;
+}
+
+.card{
+background:#020617;
+border:1px solid #1e293b;
+padding:30px;
+border-radius:12px;
+}
+
+.card h3{
+color:#22c55e;
+}
+
+.card p{
+color:#94a3b8;
+}
+
+.terminal{
+margin:80px 10%;
+background:#020617;
+border:1px solid #1e293b;
+padding:30px;
+border-radius:10px;
+font-family:monospace;
+color:#22c55e;
+}
+
+footer{
+padding:40px;
+text-align:center;
+border-top:1px solid #1e293b;
+color:#64748b;
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+<div class="logo">JonteBots</div>
+
+<nav>
+<a href="#">Home</a>
+<a href="#">Features</a>
+<a href="#">Docs</a>
+<a href="https://github.com/johnMuliNthenge/jontebots">Github</a>
+</nav>
+
+</header>
+
+<section class="hero">
+
+<h1>Automate <span>Web3 Trading</span></h1>
+
+<p>
+JonteBots is a high-performance blockchain automation engine designed for
+DeFi traders and developers who want to execute advanced strategies across
+multiple chains with precision and speed.
+</p>
+
+<div class="cta">
+<button>Launch Bot</button>
+</div>
+
+</section>
+
+<section class="features">
+
+<div class="card">
+<h3>Multi-Chain Execution</h3>
+<p>Operate across Ethereum, Polygon, Arbitrum and other EVM networks.</p>
+</div>
+
+<div class="card">
+<h3>Automated Strategies</h3>
+<p>Run arbitrage, back-running and mempool strategies automatically.</p>
+</div>
+
+<div class="card">
+<h3>Flash Loan Integration</h3>
+<p>Execute capital-efficient trades using DeFi flash loan protocols.</p>
+</div>
+
+<div class="card">
+<h3>Real-Time Monitoring</h3>
+<p>Analyze liquidity, mempool activity and price movements instantly.</p>
+</div>
+
+</section>
+
+<section class="terminal">
+
+$ python ignition.py  
+Initializing JonteBots engine...  
+Connecting to blockchain nodes...  
+Monitoring mempool...  
+Strategy engine ready  
+
+</section>
+
+<footer>
+
+© 2026 JonteBots  
+Automation Infrastructure for Web3.
+
+</footer>
+
+</body>
 </html>
